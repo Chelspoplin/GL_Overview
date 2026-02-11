@@ -1,0 +1,144 @@
+USE [BI_REPORTING];
+GO
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+
+/* ============================================================
+   Stored Proc: Publish 2024 GL Detail
+   - Revenue accounts: 40000–49999
+   - Cost accounts:    50000–99999
+   ============================================================ */
+
+ALTER PROCEDURE [analytics].[SP_GL_DETAIL_2024_BUILD]
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Parameters
+    DECLARE @StartDate date = '2024-01-01';
+    DECLARE @EndDate   date = '2024-12-31';
+
+    -- Clear existing 2024 rows (refresh pattern)
+    DELETE FROM BI_REPORTING.analytics.GL_DETAIL_2024
+    WHERE Tran_Date >= @StartDate
+      AND Tran_Date <= @EndDate;
+
+    -- Drop temp tables
+    DROP TABLE IF EXISTS #gl_raw;
+    DROP TABLE IF EXISTS #gl_detail;
+
+    -- Step 1: Pull raw GL lines from source system
+    SELECT
+        g.Tran_Date,
+        g.Branch_Id,
+        b.Branch_Code,
+        g.Doc_No,
+        g.Line_No,
+        g.Account_Code,
+        g.Department_Code,
+        d.Department_Name,
+        g.Job_Id,
+        j.Job_Code,
+        g.Vendor_Id,
+        v.Vendor_Name,
+        g.Customer_Id,
+        c.Customer_Name,
+        g.Memo,
+        g.Amount
+    INTO #gl_raw
+    FROM [ERP_DATABASE].[dbo].[GL_Transaction_Detail] g
+    LEFT JOIN [ERP_DATABASE].[dbo].[Branch_Master] b
+        ON g.Branch_Id = b.Branch_Id
+    LEFT JOIN [ERP_DATABASE].[dbo].[Department_Master] d
+        ON g.Department_Code = d.Department_Code
+    LEFT JOIN [ERP_DATABASE].[dbo].[Job_Master] j
+        ON g.Job_Id = j.Job_Id
+    LEFT JOIN [ERP_DATABASE].[dbo].[Vendor_Master] v
+        ON g.Vendor_Id = v.Vendor_Id
+    LEFT JOIN [ERP_DATABASE].[dbo].[Customer_Master] c
+        ON g.Customer_Id = c.Customer_Id
+    WHERE g.Tran_Date >= @StartDate
+      AND g.Tran_Date <= @EndDate
+      AND (
+            g.Account_Code BETWEEN '40000' AND '49999'
+         OR g.Account_Code BETWEEN '50000' AND '99999'
+          );
+
+    -- Step 2: Transform into “detail tab” shape
+    SELECT
+        r.Tran_Date,
+        DATEFROMPARTS(YEAR(r.Tran_Date), MONTH(r.Tran_Date), 1) AS Month_Begin,
+
+        r.Branch_Code,
+        r.Job_Code,
+
+        r.Doc_No,
+        r.Line_No,
+
+        r.Account_Code,
+        CASE
+            WHEN r.Account_Code BETWEEN '40000' AND '49999' THEN 'REVENUE'
+            WHEN r.Account_Code BETWEEN '50000' AND '99999' THEN 'COST'
+            ELSE 'OTHER'
+        END AS Account_Type,
+
+        r.Department_Name AS Department,
+        r.Vendor_Name,
+        r.Customer_Name,
+        r.Memo,
+
+        -- Typical accounting presentation:
+        CASE WHEN r.Account_Code BETWEEN '50000' AND '99999'
+             THEN ABS(r.Amount) ELSE 0 END AS Debit,
+
+        CASE WHEN r.Account_Code BETWEEN '40000' AND '49999'
+             THEN ABS(r.Amount) ELSE 0 END AS Credit,
+
+        CAST(
+            (CASE WHEN r.Account_Code BETWEEN '40000' AND '49999' THEN ABS(r.Amount) ELSE 0 END)
+          - (CASE WHEN r.Account_Code BETWEEN '50000' AND '99999' THEN ABS(r.Amount) ELSE 0 END)
+        AS decimal(18,2)) AS Net_Amount
+    INTO #gl_detail
+    FROM #gl_raw r;
+
+    -- Step 3: Publish into table
+    INSERT INTO BI_REPORTING.analytics.GL_DETAIL_2024
+    (
+        Tran_Date,
+        Month_Begin,
+        Branch_Code,
+        Job_Code,
+        Doc_No,
+        Line_No,
+        Account_Code,
+        Account_Type,
+        Department,
+        Vendor_Name,
+        Customer_Name,
+        Memo,
+        Debit,
+        Credit,
+        Net_Amount
+    )
+    SELECT
+        Tran_Date,
+        Month_Begin,
+        Branch_Code,
+        Job_Code,
+        Doc_No,
+        Line_No,
+        Account_Code,
+        Account_Type,
+        Department,
+        Vendor_Name,
+        Customer_Name,
+        Memo,
+        Debit,
+        Credit,
+        Net_Amount
+    FROM #gl_detail;
+
+END;
+GO
