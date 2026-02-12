@@ -4,20 +4,6 @@ This dashboard includes a few highlighted controls that let users change what is
 
 ---
 
-## Department (Filter)
-
-**What it does:**  
-Limits the dashboard to a specific department (ex: Operations).
-
-**What changes when you use it:**  
-- The KPI tiles (Revenue, Costs, Profit, Overall PM)
-- The Profit by Month chart
-- The GL Amounts by Breakout chart
-
-Use this when you want to review financial performance for one department at a time.
-
----
-
 ## Account Type (Parameter)
 
 **Options:**  
@@ -53,6 +39,17 @@ Controls how the **GL Amounts by Breakout** bar chart is grouped.
 Use this to change the level of detail in the breakout chart depending on what you’re investigating.
 
 ---
+## Go to Details (Navigation Button)
+
+**What it does:**  
+Navigates users from the high-level overview page to a more detailed breakdown page.
+
+**Purpose:**  
+- Allows deeper investigation of GL activity  
+- Provides transaction-level or expanded breakdown detail  
+- Supports follow-up analysis without cluttering the overview dashboard  
+
+Use this button when you identify an area in the summary view that requires deeper analysis.
 
 ## Summary
 
